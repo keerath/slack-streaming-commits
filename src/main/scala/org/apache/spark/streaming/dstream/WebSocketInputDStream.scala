@@ -12,19 +12,17 @@ object WebSocketInputDStream {
                                             @transient ssc_ : StreamingContext,
                                             url: String,
                                             textMessageHandler: String => Option[T],
-                                            binaryMessageHandler: Array[Byte] => Option[T],
                                             storageLevel: StorageLevel
                                             ) extends ReceiverInputDStream[T](ssc_) {
 
     def getReceiver(): Receiver[T] = {
-      new WebSocketReceiver(url, textMessageHandler, binaryMessageHandler, storageLevel)
+      new WebSocketReceiver(url, textMessageHandler, storageLevel)
     }
   }
 
   class WebSocketReceiver[T: ClassTag](
                                         url: String,
                                         textMessageHandler: String => Option[T],
-                                        binaryMessageHandler: Array[Byte] => Option[T],
                                         storageLevel: StorageLevel
                                         ) extends Receiver[T](storageLevel) with Logging {
 
@@ -35,10 +33,10 @@ object WebSocketInputDStream {
         logInfo("Connecting to: " + url)
         val newWebSocket = WebSocket()
         newWebSocket.onTextMessage(m => textMessageHandler(m).map(store))
-        newWebSocket.onBinaryMessage(m => binaryMessageHandler(m).map(store))
-        // socket.onError() TODO(GH): What to do here? restart?
         newWebSocket.open(url)
         setWebSocket(newWebSocket)
+
+
         logInfo("Connected to: " + url)
       } catch {
         case e: Exception => restart("Error starting WebSocket stream", e)
@@ -68,17 +66,16 @@ object WebSocketInputDStream {
     def webSocketStream[T: ClassTag](
                                       url: String,
                                       textMessageHandler: String => Option[T],
-                                      binaryMessageHandler: Array[Byte] => Option[T],
                                       storageLevel: StorageLevel
                                       ): DStream[T] = {
-      new WebSocketInputDStream(context, url, textMessageHandler, binaryMessageHandler, storageLevel)
+      new WebSocketInputDStream(context, url, textMessageHandler, storageLevel)
     }
 
     def webSocketTextStream(
                              url: String,
                              storageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK_SER_2
                              ): DStream[String] = {
-      webSocketStream(url, WebSocketReceiver.wrap, WebSocketReceiver.none, storageLevel)
+      webSocketStream(url, WebSocketReceiver.wrap, storageLevel)
     }
   }
 }
