@@ -42,7 +42,8 @@ object MonitorCommits {
     val ssc = new StreamingContext(conf, Seconds(1))
     val sqlContext = new SQLContext(ssc.sparkContext)
     ssc.checkpoint(checkPointDir)
-    val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages, StorageLevel.MEMORY_AND_DISK)
+    val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages, StorageLevel.MEMORY_AND_DISK_2)
+
     val committers = commitMessages.transform({ rdd =>
       val msgInfo = sqlContext.read.json(rdd)
       getCommitters(msgInfo.select("attachments.text"))
