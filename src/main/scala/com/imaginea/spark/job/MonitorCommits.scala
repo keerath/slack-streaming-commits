@@ -8,8 +8,7 @@ import java.util.Date
 import com.imaginea.slack.{SlackAuthen, Utils}
 import com.imaginea.spark.listener.BatchListener
 import org.apache.spark.SparkConf
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, SQLContext}
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.WebSocketInputDStream._
 import org.apache.spark.streaming.{Minutes, Seconds, StreamingContext}
@@ -41,12 +40,10 @@ object MonitorCommits {
     val conf = new SparkConf().setMaster("local[2]").setAppName("Monitor Commits")
     val ssc = new StreamingContext(conf, Seconds(1))
     val sqlContext = new SQLContext(ssc.sparkContext)
-    ssc.checkpoint(checkPointDir)
     val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages, StorageLevel.MEMORY_AND_DISK_2)
-
     val committers = commitMessages.transform({ rdd =>
-      val msgInfo = sqlContext.read.json(rdd)
-      getCommitters(msgInfo.select("attachments.text"))
+      val commitInfo = sqlContext.read.json(rdd).select("attachments.text")
+      commitInfo.flatMap(_.getSeq[String](0).map(extractCommitters))
     }).reduceByWindow(_ ++ _, Minutes(60 * 24), Minutes(60 * 24))
 
     val nonCommitters = committers.map(mutableSet.diff)
@@ -60,6 +57,7 @@ object MonitorCommits {
     }))
       writeBufferToFile()
     })
+    ssc.checkpoint(checkPointDir)
     ssc
   }
 
@@ -79,12 +77,7 @@ object MonitorCommits {
     }
   }
 
-  def getCommitters(msg: DataFrame): RDD[mutable.HashSet[String]] = {
-    val committers = new mutable.HashSet[String]()
-    msg.flatMap(_.getSeq[String](0).map(extractCommitter))
-  }
-
-  def extractCommitter(text: String): mutable.HashSet[String] = {
+  def extractCommitters(text: String): mutable.HashSet[String] = {
     val committers = new mutable.HashSet[String]()
     val lines = text.split("\\r?\\n")
     for (line <- lines; if !(line.contains("Merge") || line.contains("merge"))) {
