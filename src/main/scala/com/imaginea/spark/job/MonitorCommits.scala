@@ -22,7 +22,7 @@ object MonitorCommits {
   val checkPointDir = System.getProperty("user.home") + File.separator + "checkpoint-data"
   val nameVsAlias = mutable.HashMap[String, String]()
   val buffer = mutable.Buffer[String]()
-  val dateFormat = new SimpleDateFormat("yyy-MM-dd")
+  val dateFormat = new SimpleDateFormat("yyyy-MM-dd")
   val COMMITTERS = "committers"
 
   def main(args: Array[String]): Unit = {
@@ -70,7 +70,9 @@ object MonitorCommits {
   }
 
   def getCommitMessages(slackMessage: String) = {
-    if (slackMessage.contains("new commit")) {
+    if (slackMessage.contains("new commit") &&
+      slackMessage.contains("attachments") &&
+      slackMessage.contains("github")) {
       Some(slackMessage)
     } else {
       None
