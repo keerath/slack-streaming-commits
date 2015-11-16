@@ -22,7 +22,7 @@ object MonitorCommits {
   val checkPointDir = System.getProperty("user.home") + File.separator + "checkpoint-data"
   val nameVsAlias = mutable.HashMap[String, String]()
   val buffer = mutable.Buffer[String]()
-  val dateFormat = new SimpleDateFormat("yyyy-MM-dd")
+  val dateFormat = new SimpleDateFormat("dd/MM/yyyy")
   val COMMITTERS = "committers"
 
   def main(args: Array[String]): Unit = {
@@ -41,9 +41,14 @@ object MonitorCommits {
     val ssc = new StreamingContext(conf, Seconds(1))
     val sqlContext = new SQLContext(ssc.sparkContext)
     val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages, StorageLevel.MEMORY_AND_DISK_2)
-    val committers = commitMessages.transform({ rdd =>
-      val commitInfo = sqlContext.read.json(rdd).select("attachments.text")
-      commitInfo.flatMap(_.getSeq[String](0).map(extractCommitters))
+    val committers = commitMessages.transform({ rdd => {
+      if (!rdd.isEmpty()) {
+        val commitInfo = sqlContext.read.json(rdd).select("attachments.text")
+        commitInfo.flatMap(_.getSeq[String](0).map(extractCommitters))
+      } else {
+        rdd.map(x => new mutable.HashSet[String]())
+      }
+    }
     }).reduceByWindow(_ ++ _, Minutes(60 * 24), Minutes(60 * 24))
 
     val nonCommitters = committers.map(mutableSet.diff)
