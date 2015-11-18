@@ -8,17 +8,16 @@ import org.apache.spark.streaming.scheduler.{StreamingListenerReceiverStarted, S
 class BatchListener extends StreamingListener {
 
   override def onBatchSubmitted(onBatchSubmitted: StreamingListenerBatchSubmitted) = {
-    MonitorCommits.reloadMapOfNameVsAlias(new File("src/main/resources/Mappings"))
+    MonitorCommits.reloadMapOfNameVsAlias(new File(MonitorCommits.outputDir + File.separator + "Mappings"))
   }
 
   override def onReceiverStarted(receiverStarted: StreamingListenerReceiverStarted) = {
-    println("receiver started")
-    val committerFile = new File("committers")
+    val committerFile = new File(MonitorCommits.COMMITTERS)
     if (committerFile.exists) {
       val committers = Source.fromFile(committerFile).getLines()
       MonitorCommits.mutableSet.clear()
       if (committers.nonEmpty) {
-        for (committer <- committers) {
+        for (committer <- committers; if committer.trim().nonEmpty) {
           MonitorCommits.mutableSet += committer
         }
       }

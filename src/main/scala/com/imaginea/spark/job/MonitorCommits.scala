@@ -19,28 +19,38 @@ import scala.io.Source
 object MonitorCommits {
   val token = Source.fromFile("src/main/resources/Config").getLines().toStream.head
   val mutableSet = new mutable.HashSet[String]()
-  val checkPointDir = System.getProperty("user.home") + File.separator + "checkpoint-data"
+  val outputDir = System.getProperty("user.home") + File.separator + "slack-info"
+  val checkPointDir = outputDir + File.separator + "checkpoint-data"
   val nameVsAlias = mutable.HashMap[String, String]()
   val buffer = mutable.Buffer[String]()
-  val dateFormat = new SimpleDateFormat("dd/MM/yyyy")
-  val COMMITTERS = "committers"
+  val dateFormat = new SimpleDateFormat("dd-MM-yyyy")
+  val COMMITTERS = outputDir + File.separator + "committers"
 
-  def main(args: Array[String]): Unit = {
-    val webSoketURL = new SlackAuthen().tokenAuthen(token).getURL
+  def init(): Unit = {
+    if (!Files.isDirectory(Paths.get(outputDir))) {
+      Files.createDirectory(Paths.get(outputDir))
+    }
     if (!Files.isDirectory(Paths.get(checkPointDir))) {
       Files.createDirectory(Paths.get(checkPointDir))
     }
+  }
+
+  def main(args: Array[String]): Unit = {
+    init()
+    val webSoketURL = new SlackAuthen().tokenAuthen(token).getURL
     val ssc = StreamingContext.getOrCreate(checkPointDir, () => streamingJob(webSoketURL))
     ssc.addStreamingListener(new BatchListener)
     ssc.start()
     ssc.awaitTermination()
   }
 
+
   def streamingJob(webSocketURL: String) = {
     val conf = new SparkConf().setMaster("local[2]").setAppName("Monitor Commits")
     val ssc = new StreamingContext(conf, Seconds(1))
     val sqlContext = new SQLContext(ssc.sparkContext)
-    val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages, StorageLevel.MEMORY_AND_DISK_2)
+    val commitMessages = ssc.webSocketStream(webSocketURL, getCommitMessages,
+      StorageLevel.MEMORY_AND_DISK)
     val committers = commitMessages.transform({ rdd => {
       if (!rdd.isEmpty()) {
         val commitInfo = sqlContext.read.json(rdd).select("attachments.text")
@@ -51,8 +61,9 @@ object MonitorCommits {
     }
     }).reduceByWindow(_ ++ _, Minutes(60 * 24), Minutes(60 * 24))
 
-    val nonCommitters = committers.map(mutableSet.diff)
-    nonCommitters.map(_.mkString("\n")).saveAsTextFiles("Non-committers " + dateFormat.format(new Date()), "info")
+    val nonCommitters = committers.map(mutableSet diff _)
+    nonCommitters.map(_.mkString("\n")).saveAsTextFiles(outputDir + File.separator +
+      "Non-committers " + dateFormat.format(new Date()), "info")
 
     committers.foreachRDD({ rdd => rdd.foreach(record => record.foreach({ x =>
       mutableSet.add(x) match {
@@ -68,8 +79,11 @@ object MonitorCommits {
 
   def writeBufferToFile(): Unit = {
     if (buffer.nonEmpty) {
-      new File(COMMITTERS).createNewFile
-      Utils.getInstance.writeToFile(buffer.distinct.mkString("\n"))
+      val committersFile = new File(COMMITTERS)
+      if (!committersFile.exists()) {
+        committersFile.createNewFile
+      }
+      Utils.getInstance.writeToFile(buffer.distinct.map(x => x ++ "\n").mkString)
       buffer.clear()
     }
   }
@@ -112,4 +126,3 @@ object MonitorCommits {
     }
   }
 }
-
